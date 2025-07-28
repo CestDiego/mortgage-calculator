@@ -1,0 +1,28 @@
+{
+  "name": "mortgage-calculator",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "test": "tsc -p tsconfig.test.json && node dist/calculator.test.js",
+    "deploy": "npm run build",
+    "deploy:surge": "npm run build && surge dist mortgage-calculator.surge.sh",
+    "deploy:netlify": "npm run build && netlify deploy --dir=dist --prod"
+  },
+  "devDependencies": {
+    "typescript": "~5.8.3",
+    "vite": "^7.0.4"
+  },
+  "dependencies": {
+    "@tailwindcss/postcss": "^4.1.11",
+    "@types/chart.js": "^2.9.41",
+    "autoprefixer": "^10.4.21",
+    "chart.js": "^4.5.0",
+    "decimal.js": "^10.6.0",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^4.1.11"
+  }
+}

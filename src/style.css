@@ -1,0 +1,81 @@
+/* Custom styles for mortgage calculator */
+* {
+  box-sizing: border-box;
+}
+
+/* Chart container styles */
+#payment-chart, #balance-chart, #comparison-chart {
+  max-height: 300px;
+}
+
+/* Comparison table scrollable */
+#comparison-table {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+/* Smooth transitions for collapsible sections */
+.transition-transform {
+  transition: transform 0.2s ease-in-out;
+}
+
+/* Mobile responsiveness improvements */
+@media (max-width: 768px) {
+  /* Stack form sections on mobile */
+  .grid {
+    gap: 1rem !important;
+  }
+  
+  /* Smaller text on mobile for better fit */
+  .text-4xl {
+    font-size: 2.5rem !important;
+  }
+  
+  /* Better spacing for mobile */
+  .p-6 {
+    padding: 1rem !important;
+  }
+  
+  /* Hide comparison chart on very small screens */
+  #comparison-chart {
+    display: none;
+  }
+}
+
+/* Improved focus states */
+input:focus, select:focus, button:focus {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+}
+
+/* Better hover states for interactive elements */
+button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+/* Smooth number transitions */
+.transition-all {
+  transition: all 0.3s ease-in-out;
+}
+
+/* Print styles */
+@media print {
+  .no-print {
+    display: none;
+  }
+  
+  #amortization-table {
+    font-size: 0.75rem;
+  }
+  
+  /* Hide interactive elements when printing */
+  button, .hover\\:bg-gray-50 {
+    display: none !important;
+  }
+  
+  /* Show all collapsed content when printing */
+  .hidden {
+    display: block !important;
+  }
+}

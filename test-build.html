@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mortgage Calculator Test</title>
+</head>
+<body>
+    <h1>Quick Calculator Test</h1>
+    <script type="module">
+        import { MortgageCalculator } from './dist/assets/index-ByslhKHk.js';
+        
+        // Test basic calculation
+        const input = {
+            loanAmount: 300000,
+            interestRate: 6.5,
+            loanTermYears: 30,
+            paymentFrequency: 'monthly'
+        };
+        
+        console.log('Testing Mortgage Calculator with:', input);
+        
+        try {
+            const calculator = new MortgageCalculator(input);
+            const results = calculator.calculate();
+            
+            console.log('Results:');
+            console.log('Monthly Payment:', results.regularPaymentAmount.toFixed(2));
+            console.log('Total Interest:', results.totalInterest.toFixed(2));
+            console.log('Total Amount:', results.totalAmount.toFixed(2));
+            console.log('Number of Payments:', results.totalPayments);
+            
+            document.body.innerHTML += `
+                <div style="margin: 20px; font-family: sans-serif;">
+                    <h2>Test Results</h2>
+                    <p><strong>Loan Amount:</strong> $${input.loanAmount.toLocaleString()}</p>
+                    <p><strong>Interest Rate:</strong> ${input.interestRate}%</p>
+                    <p><strong>Loan Term:</strong> ${input.loanTermYears} years</p>
+                    <p><strong>Monthly Payment:</strong> $${results.regularPaymentAmount.toFixed(2)}</p>
+                    <p><strong>Total Interest:</strong> $${results.totalInterest.toFixed(2)}</p>
+                    <p><strong>Total Amount:</strong> $${results.totalAmount.toFixed(2)}</p>
+                    <p style="color: green; font-weight: bold;">✓ Calculator working correctly!</p>
+                </div>
+            `;
+        } catch (error) {
+            console.error('Error:', error);
+            document.body.innerHTML += `<p style="color: red;">Error: ${error.message}</p>`;
+        }
+    </script>
+</body>
+</html>
