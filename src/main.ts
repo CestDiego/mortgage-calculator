@@ -6,6 +6,13 @@ import { ComparisonManager, ReverseCalculator } from './comparison';
 import type { ComparisonScenario, ReverseCalculatorInput } from './comparison';
 import { CurrencyService, CURRENCIES } from './currency-service';
 import type { ExchangeRates } from './currency-service';
+import { PrepaymentCalculator } from './prepayment-calculator';
+import type { 
+  PrepaymentStrategy, 
+  OneTimePrepayment,
+  PrepaymentResults
+} from './prepayment-types';
+import { PREPAYMENT_TEMPLATES } from './prepayment-types';
 Chart.register(...registerables);
 
 // Global variables
@@ -14,10 +21,20 @@ let currentInput: MortgageInput | null = null;
 let paymentChart: Chart<"doughnut", number[], string> | null = null;
 let balanceChart: Chart<"line", {x: string, y: number}[], unknown> | null = null;
 let comparisonChart: Chart<"bar", number[], string> | null = null;
+let prepaymentTimelineChart: Chart<"bar", number[], string> | null = null;
 const comparisonManager = new ComparisonManager();
 const reverseCalculator = new ReverseCalculator();
 const currencyService = CurrencyService.getInstance();
 let currentExchangeRates: ExchangeRates | null = null;
+
+// Prepayment state
+let currentPrepaymentStrategy: PrepaymentStrategy = {
+  id: 'default',
+  enabled: false,
+  recurringPayments: [],
+  oneTimePayments: []
+};
+let currentPrepaymentResults: PrepaymentResults | null = null;
 
 // Initialize the app
 document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
@@ -125,6 +142,214 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
                   </button>
                 </div>
                 <p class="mt-1 text-xs text-gray-500" id="rateLastUpdated"></p>
+              </div>
+            </div>
+            
+            <!-- Prepayment Strategy Section (Collapsible) -->
+            <div class="pt-4 border-t border-gray-200">
+              <button
+                type="button"
+                id="toggle-prepayment"
+                class="flex items-center justify-between w-full text-left text-sm font-medium text-gray-700 hover:text-gray-900"
+              >
+                <span class="flex items-center gap-2">
+                  <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/>
+                  </svg>
+                  <span class="font-semibold">Prepayment Strategy</span>
+                  <span id="prepayment-status" class="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-600">Disabled</span>
+                </span>
+                <svg id="prepayment-chevron" class="w-5 h-5 text-gray-400 transform transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                </svg>
+              </button>
+              
+              <div id="prepayment-section" class="hidden mt-4 space-y-4">
+                <!-- Enable/Disable Toggle -->
+                <label class="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    id="enablePrepayment"
+                    name="enablePrepayment"
+                    class="text-green-600 focus:ring-green-500 rounded"
+                  />
+                  <span class="text-sm font-medium text-gray-700">Enable prepayment strategy</span>
+                </label>
+                
+                <!-- Tab Interface -->
+                <div id="prepayment-tabs-container" class="opacity-50 transition-opacity">
+                  <div class="border-b border-gray-200">
+                    <nav class="-mb-px flex space-x-8" aria-label="Tabs">
+                      <button
+                        type="button"
+                        data-tab="recurring"
+                        class="prepayment-tab border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm"
+                      >
+                        <svg class="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                        Recurring
+                      </button>
+                      <button
+                        type="button"
+                        data-tab="onetime"
+                        class="prepayment-tab border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm"
+                      >
+                        <svg class="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                        One-Time
+                      </button>
+                      <button
+                        type="button"
+                        data-tab="smart"
+                        class="prepayment-tab border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm"
+                      >
+                        <svg class="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+                        </svg>
+                        Smart Plans
+                      </button>
+                    </nav>
+                  </div>
+                  
+                  <!-- Tab Content -->
+                  <div class="mt-4">
+                    <!-- Recurring Tab -->
+                    <div id="recurring-tab" class="prepayment-tab-content">
+                      <div class="space-y-4">
+                        <div>
+                          <label for="recurringAmount" class="block text-sm font-medium text-gray-700 mb-1">
+                            Extra Payment Amount
+                          </label>
+                          <div class="relative">
+                            <span class="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" id="recurringAmountSymbol">$</span>
+                            <input
+                              type="number"
+                              id="recurringAmount"
+                              name="recurringAmount"
+                              value="0"
+                              min="0"
+                              step="50"
+                              class="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                            />
+                          </div>
+                        </div>
+                        
+                        <div>
+                          <label for="recurringFrequency" class="block text-sm font-medium text-gray-700 mb-1">
+                            Frequency
+                          </label>
+                          <select
+                            id="recurringFrequency"
+                            name="recurringFrequency"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                          >
+                            <option value="monthly">Monthly</option>
+                            <option value="quarterly">Quarterly</option>
+                            <option value="annually">Annually</option>
+                          </select>
+                        </div>
+                        
+                        <div class="grid grid-cols-2 gap-4">
+                          <div>
+                            <label for="recurringStartDate" class="block text-sm font-medium text-gray-700 mb-1">
+                              Start Date
+                            </label>
+                            <input
+                              type="date"
+                              id="recurringStartDate"
+                              name="recurringStartDate"
+                              class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                            />
+                          </div>
+                          <div>
+                            <label for="recurringEndDate" class="block text-sm font-medium text-gray-700 mb-1">
+                              End Date (Optional)
+                            </label>
+                            <input
+                              type="date"
+                              id="recurringEndDate"
+                              name="recurringEndDate"
+                              class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <!-- One-Time Tab -->
+                    <div id="onetime-tab" class="prepayment-tab-content hidden">
+                      <div class="space-y-4">
+                        <!-- Quick Templates -->
+                        <div>
+                          <p class="text-sm font-medium text-gray-700 mb-2">Quick Templates</p>
+                          <div class="grid grid-cols-3 gap-2">
+                            ${PREPAYMENT_TEMPLATES.slice(0, 6).map(template => `
+                              <button
+                                type="button"
+                                class="prepayment-template p-2 text-xs border border-gray-300 rounded-md hover:border-green-500 hover:bg-green-50 transition-colors"
+                                data-template-id="${template.id}"
+                              >
+                                <span class="block text-lg mb-1">${template.icon}</span>
+                                <span class="block font-medium">${template.name}</span>
+                              </button>
+                            `).join('')}
+                          </div>
+                        </div>
+                        
+                        <!-- One-Time Payments List -->
+                        <div>
+                          <div class="flex justify-between items-center mb-2">
+                            <p class="text-sm font-medium text-gray-700">One-Time Payments</p>
+                            <button
+                              type="button"
+                              id="add-onetime-payment"
+                              class="text-sm text-green-600 hover:text-green-700 font-medium"
+                            >
+                              + Add Payment
+                            </button>
+                          </div>
+                          <div id="onetime-payments-list" class="space-y-2">
+                            <p class="text-sm text-gray-500 text-center py-4">No one-time payments added yet</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <!-- Smart Plans Tab -->
+                    <div id="smart-tab" class="prepayment-tab-content hidden">
+                      <div class="space-y-4">
+                        <p class="text-sm text-gray-600 mb-4">Choose a prepayment plan based on your risk tolerance and budget</p>
+                        <div id="smart-plans-container" class="grid grid-cols-1 gap-4">
+                          <!-- Plans will be dynamically inserted here -->
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <!-- Impact Summary -->
+                  <div id="prepayment-impact" class="mt-6 p-4 bg-green-50 rounded-lg border border-green-200 hidden">
+                    <div class="flex items-start gap-3">
+                      <svg class="w-5 h-5 text-green-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/>
+                      </svg>
+                      <div class="flex-1">
+                        <p class="text-sm font-semibold text-green-800">Prepayment Impact</p>
+                        <div class="mt-2 grid grid-cols-2 gap-4 text-sm">
+                          <div>
+                            <span class="text-green-700">Interest Saved:</span>
+                            <span id="impact-interest-saved" class="font-bold text-green-800 ml-1">$0</span>
+                          </div>
+                          <div>
+                            <span class="text-green-700">Time Saved:</span>
+                            <span id="impact-time-saved" class="font-bold text-green-800 ml-1">0 months</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
             
@@ -385,6 +610,29 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
             <div>
               <h4 class="text-base font-medium text-gray-700 mb-3">Balance Over Time</h4>
               <canvas id="balance-chart"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Prepayment Timeline Section -->
+      <div id="prepayment-timeline-section" class="hidden bg-white rounded-lg shadow-md overflow-hidden">
+        <button
+          type="button"
+          id="toggle-prepayment-timeline"
+          class="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
+        >
+          <h3 class="text-lg font-semibold text-gray-800">Prepayment Timeline</h3>
+          <svg id="prepayment-timeline-chevron" class="w-5 h-5 text-gray-400 transform rotate-180 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+          </svg>
+        </button>
+        <div id="prepayment-timeline-content" class="hidden">
+          <div class="p-6 pt-0">
+            <h4 class="text-base font-medium text-gray-700 mb-3">Prepayment Schedule & Impact</h4>
+            <canvas id="prepayment-timeline-chart"></canvas>
+            <div id="prepayment-events-list" class="mt-4 space-y-2 max-h-48 overflow-y-auto">
+              <!-- Prepayment events will be listed here -->
             </div>
           </div>
         </div>
@@ -695,6 +943,112 @@ toggleReverse?.addEventListener('click', () => {
   reverseChevron?.classList.toggle('rotate-180');
 });
 
+// Prepayment handlers
+const togglePrepayment = document.getElementById('toggle-prepayment');
+const prepaymentSection = document.getElementById('prepayment-section');
+const prepaymentChevron = document.getElementById('prepayment-chevron');
+
+togglePrepayment?.addEventListener('click', () => {
+  prepaymentSection?.classList.toggle('hidden');
+  prepaymentChevron?.classList.toggle('rotate-180');
+});
+
+const togglePrepaymentTimeline = document.getElementById('toggle-prepayment-timeline');
+const prepaymentTimelineContent = document.getElementById('prepayment-timeline-content');
+const prepaymentTimelineChevron = document.getElementById('prepayment-timeline-chevron');
+
+togglePrepaymentTimeline?.addEventListener('click', () => {
+  prepaymentTimelineContent?.classList.toggle('hidden');
+  prepaymentTimelineChevron?.classList.toggle('rotate-180');
+});
+
+// Enable prepayment toggle
+const enablePrepaymentToggle = document.getElementById('enablePrepayment') as HTMLInputElement;
+const prepaymentTabsContainer = document.getElementById('prepayment-tabs-container');
+const prepaymentStatus = document.getElementById('prepayment-status');
+
+enablePrepaymentToggle?.addEventListener('change', (e) => {
+  const target = e.target as HTMLInputElement;
+  currentPrepaymentStrategy.enabled = target.checked;
+  
+  if (target.checked) {
+    prepaymentTabsContainer?.classList.remove('opacity-50');
+    prepaymentStatus!.textContent = 'Enabled';
+    prepaymentStatus!.classList.remove('bg-gray-100', 'text-gray-600');
+    prepaymentStatus!.classList.add('bg-green-100', 'text-green-700');
+  } else {
+    prepaymentTabsContainer?.classList.add('opacity-50');
+    prepaymentStatus!.textContent = 'Disabled';
+    prepaymentStatus!.classList.remove('bg-green-100', 'text-green-700');
+    prepaymentStatus!.classList.add('bg-gray-100', 'text-gray-600');
+  }
+  
+  updatePrepaymentImpact();
+});
+
+// Tab switching
+const prepaymentTabs = document.querySelectorAll('.prepayment-tab');
+prepaymentTabs.forEach(tab => {
+  tab.addEventListener('click', (e) => {
+    const button = e.currentTarget as HTMLButtonElement;
+    const tabName = button.getAttribute('data-tab') as 'recurring' | 'onetime' | 'smart';
+    if (!tabName) return;
+    
+    // currentActiveTab = tabName; // Currently unused
+    
+    // Update tab styles
+    prepaymentTabs.forEach(t => {
+      t.classList.remove('border-green-500', 'text-green-600');
+      t.classList.add('border-transparent', 'text-gray-500');
+    });
+    button.classList.remove('border-transparent', 'text-gray-500');
+    button.classList.add('border-green-500', 'text-green-600');
+    
+    // Show/hide tab content
+    document.querySelectorAll('.prepayment-tab-content').forEach(content => {
+      content.classList.add('hidden');
+    });
+    document.getElementById(`${tabName}-tab`)?.classList.remove('hidden');
+    
+    // Load smart plans if switching to smart tab
+    if (tabName === 'smart') {
+      loadSmartPlans();
+    }
+  });
+});
+
+// Set initial active tab
+(document.querySelector('[data-tab="recurring"]') as HTMLButtonElement)?.click();
+
+// Recurring payment inputs
+const recurringAmountInput = document.getElementById('recurringAmount') as HTMLInputElement;
+const recurringFrequencySelect = document.getElementById('recurringFrequency') as HTMLSelectElement;
+const recurringStartDateInput = document.getElementById('recurringStartDate') as HTMLInputElement;
+const recurringEndDateInput = document.getElementById('recurringEndDate') as HTMLInputElement;
+
+// Set default start date to today
+recurringStartDateInput.valueAsDate = new Date();
+
+[recurringAmountInput, recurringFrequencySelect, recurringStartDateInput, recurringEndDateInput].forEach(input => {
+  input?.addEventListener('change', updateRecurringPrepayment);
+});
+
+// One-time payment handlers
+document.getElementById('add-onetime-payment')?.addEventListener('click', addOneTimePayment);
+
+// Template buttons
+document.addEventListener('click', (e) => {
+  const target = e.target as HTMLElement;
+  const templateButton = target.closest('.prepayment-template') as HTMLButtonElement;
+  if (templateButton) {
+    const templateId = templateButton.getAttribute('data-template-id');
+    const template = PREPAYMENT_TEMPLATES.find(t => t.id === templateId);
+    if (template) {
+      addOneTimePaymentFromTemplate(template);
+    }
+  }
+});
+
 // Home price and down payment change handlers
 const homePriceInput = document.getElementById('homePrice') as HTMLInputElement;
 const loanAmountInput = document.getElementById('loanAmount') as HTMLInputElement;
@@ -764,10 +1118,12 @@ function updateCurrencySymbols() {
   const extraPaymentSymbol = document.getElementById('extraPaymentSymbol');
   const downPaymentPrefix = document.getElementById('downPaymentPrefix');
   const targetPaymentSymbol = document.getElementById('targetPaymentSymbol');
+  const recurringAmountSymbol = document.getElementById('recurringAmountSymbol');
   
   if (homePriceSymbol) homePriceSymbol.textContent = symbol;
   if (extraPaymentSymbol) extraPaymentSymbol.textContent = symbol;
   if (targetPaymentSymbol) targetPaymentSymbol.textContent = symbol;
+  if (recurringAmountSymbol) recurringAmountSymbol.textContent = symbol;
   
   // Update down payment prefix if in fixed mode
   const downPaymentType = (document.querySelector('input[name="downPaymentType"]:checked') as HTMLInputElement)?.value;
@@ -892,6 +1248,25 @@ async function calculateMortgage() {
   const calculator = new MortgageCalculator(input);
   currentResults = calculator.calculate();
   
+  // Apply prepayment strategy if enabled
+  if (currentPrepaymentStrategy.enabled && 
+      (currentPrepaymentStrategy.recurringPayments.length > 0 || 
+       currentPrepaymentStrategy.oneTimePayments.length > 0)) {
+    const prepaymentCalculator = new PrepaymentCalculator(
+      currentResults.regularPaymentAmount,
+      currentInput.interestRate,
+      currentResults.amortizationSchedule
+    );
+    currentPrepaymentResults = prepaymentCalculator.calculateWithPrepayments(currentPrepaymentStrategy);
+    
+    // Update results with prepayment data
+    currentResults.amortizationSchedule = currentPrepaymentResults.modifiedSchedule;
+    currentResults.totalPayments = currentPrepaymentResults.modifiedSchedule.length;
+    currentResults.payoffDate = currentPrepaymentResults.newPayoffDate;
+    currentResults.totalAmount = currentPrepaymentResults.modifiedSchedule.reduce((sum, p) => sum + p.paymentAmount, 0);
+    currentResults.totalInterest = currentPrepaymentResults.modifiedSchedule.reduce((sum, p) => sum + p.interestPayment, 0);
+  }
+  
   // Add converted amounts if currency conversion is enabled
   if (displayCurrency && exchangeRate && displayCurrency !== currency) {
     currentResults.convertedAmounts = {
@@ -911,6 +1286,14 @@ async function calculateMortgage() {
   // Show collapsible sections
   document.getElementById('payment-breakdown-section')?.classList.remove('hidden');
   document.getElementById('amortization-section')?.classList.remove('hidden');
+  
+  // Show prepayment timeline if prepayments are enabled
+  if (currentPrepaymentStrategy.enabled && currentPrepaymentResults) {
+    document.getElementById('prepayment-timeline-section')?.classList.remove('hidden');
+    createPrepaymentTimeline(currentPrepaymentResults);
+  } else {
+    document.getElementById('prepayment-timeline-section')?.classList.add('hidden');
+  }
 }
 
 function displayResults(results: MortgageResults) {
@@ -924,7 +1307,8 @@ function displayResults(results: MortgageResults) {
   const paymentFrequencyText = currentInput?.paymentFrequency === 'monthly' ? 'Monthly' : 
                                currentInput?.paymentFrequency === 'biweekly' ? 'Bi-weekly' : 'Weekly';
   
-  const interestSavings = calculateInterestSavings(results);
+  const interestSavings = currentPrepaymentResults?.interestSaved || calculateInterestSavings(results);
+  const showPrepaymentImpact = currentPrepaymentStrategy.enabled && currentPrepaymentResults && interestSavings > 0;
   
   summaryDiv.innerHTML = `
     <div class="space-y-6">
@@ -998,7 +1382,22 @@ function displayResults(results: MortgageResults) {
         </div>
       </div>
       
-      ${interestSavings > 0 ? `
+      ${showPrepaymentImpact ? `
+        <!-- Prepayment Impact -->
+        <div class="p-4 bg-green-50 rounded-lg border border-green-200">
+          <div class="flex items-start gap-3">
+            <svg class="w-5 h-5 text-green-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/>
+            </svg>
+            <div>
+              <p class="text-sm font-medium text-green-800">Prepayment Strategy Impact</p>
+              <p class="text-sm text-green-700">Interest saved: ${currencyService.formatCurrency(interestSavings, baseCurrency)}</p>
+              <p class="text-sm text-green-700">Time saved: ${currentPrepaymentResults!.timeSaved.years} years, ${currentPrepaymentResults!.timeSaved.months} months</p>
+              <p class="text-sm text-green-700">Total prepayments: ${currencyService.formatCurrency(currentPrepaymentResults!.totalPrepayments, baseCurrency)}</p>
+            </div>
+          </div>
+        </div>
+      ` : interestSavings > 0 && currentInput?.extraPayment ? `
         <!-- Savings Tip -->
         <div class="p-4 bg-green-50 rounded-lg border border-green-200">
           <div class="flex items-start gap-3">
@@ -1171,14 +1570,17 @@ function displayAmortizationSchedule(schedule: PaymentDetails[]) {
       `;
     }
     
+    const hasPrepayment = payment.extraPayment > 0;
+    const rowClass = hasPrepayment ? 'bg-green-50 hover:bg-green-100' : 'hover:bg-gray-50';
+    
     return `
-      <tr class="hover:bg-gray-50">
+      <tr class="${rowClass}">
         <td class="px-4 py-2 text-sm text-gray-900">${payment.paymentNumber}</td>
         <td class="px-4 py-2 text-sm text-gray-900">${payment.paymentDate.toLocaleDateString()}</td>
         <td class="px-4 py-2 text-sm text-gray-900">${currencyService.formatCurrency(payment.paymentAmount, baseCurrency)}</td>
         <td class="px-4 py-2 text-sm text-gray-900">${currencyService.formatCurrency(payment.principalPayment, baseCurrency)}</td>
         <td class="px-4 py-2 text-sm text-gray-900">${currencyService.formatCurrency(payment.interestPayment, baseCurrency)}</td>
-        <td class="px-4 py-2 text-sm text-gray-900">${currencyService.formatCurrency(payment.extraPayment, baseCurrency)}</td>
+        <td class="px-4 py-2 text-sm ${hasPrepayment ? 'font-semibold text-green-700' : 'text-gray-900'}">${currencyService.formatCurrency(payment.extraPayment, baseCurrency)}</td>
         <td class="px-4 py-2 text-sm text-gray-900">${currencyService.formatCurrency(payment.remainingBalance, baseCurrency)}</td>
       </tr>
     `;
@@ -1469,3 +1871,408 @@ function displayReverseResults(result: any, input: ReverseCalculatorInput) {
 
 // Make removeComparison available globally
 (window as any).removeComparison = removeComparison;
+
+// Prepayment helper functions
+function updateRecurringPrepayment() {
+  const amount = parseFloat(recurringAmountInput?.value || '0');
+  const frequency = recurringFrequencySelect?.value as 'monthly' | 'quarterly' | 'annually';
+  const startDate = recurringStartDateInput?.valueAsDate;
+  const endDate = recurringEndDateInput?.valueAsDate || undefined;
+  
+  if (amount > 0 && startDate) {
+    currentPrepaymentStrategy.recurringPayments = [{
+      amount,
+      frequency,
+      startDate,
+      endDate
+    }];
+  } else {
+    currentPrepaymentStrategy.recurringPayments = [];
+  }
+  
+  updatePrepaymentImpact();
+}
+
+function addOneTimePayment() {
+  const date = new Date();
+  date.setMonth(date.getMonth() + 1); // Default to next month
+  
+  const payment: OneTimePrepayment = {
+    id: Date.now().toString(),
+    date,
+    amount: 1000,
+    description: 'Extra Payment'
+  };
+  
+  currentPrepaymentStrategy.oneTimePayments.push(payment);
+  renderOneTimePayments();
+  updatePrepaymentImpact();
+}
+
+function addOneTimePaymentFromTemplate(template: any) {
+  const date = new Date();
+  
+  // Set date based on template timing
+  if (template.timing) {
+    const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 
+                       'July', 'August', 'September', 'October', 'November', 'December'];
+    const targetMonth = monthNames.indexOf(template.timing);
+    if (targetMonth !== -1) {
+      date.setMonth(targetMonth);
+      if (date < new Date()) {
+        date.setFullYear(date.getFullYear() + 1);
+      }
+    }
+  } else {
+    date.setMonth(date.getMonth() + 1);
+  }
+  
+  const payment: OneTimePrepayment = {
+    id: Date.now().toString(),
+    date,
+    amount: template.defaultAmount || 1000,
+    description: template.name
+  };
+  
+  currentPrepaymentStrategy.oneTimePayments.push(payment);
+  renderOneTimePayments();
+  updatePrepaymentImpact();
+}
+
+function renderOneTimePayments() {
+  const container = document.getElementById('onetime-payments-list');
+  if (!container) return;
+  
+  const currency = currencySelect?.value || 'USD';
+  
+  if (currentPrepaymentStrategy.oneTimePayments.length === 0) {
+    container.innerHTML = '<p class="text-sm text-gray-500 text-center py-4">No one-time payments added yet</p>';
+    return;
+  }
+  
+  container.innerHTML = currentPrepaymentStrategy.oneTimePayments
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+    .map(payment => `
+      <div class="flex items-center justify-between p-3 bg-gray-50 rounded-md">
+        <div class="flex-1">
+          <div class="flex items-center gap-2">
+            <input
+              type="date"
+              value="${new Date(payment.date).toISOString().split('T')[0]}"
+              onchange="updateOneTimePaymentDate('${payment.id}', this.value)"
+              class="text-sm px-2 py-1 border border-gray-300 rounded"
+            />
+            <input
+              type="text"
+              value="${payment.description}"
+              onchange="updateOneTimePaymentDescription('${payment.id}', this.value)"
+              class="text-sm px-2 py-1 border border-gray-300 rounded flex-1"
+              placeholder="Description"
+            />
+          </div>
+        </div>
+        <div class="flex items-center gap-2 ml-4">
+          <div class="relative">
+            <span class="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-500 text-sm">${CURRENCIES[currency]?.symbol || '$'}</span>
+            <input
+              type="number"
+              value="${payment.amount}"
+              onchange="updateOneTimePaymentAmount('${payment.id}', this.value)"
+              class="text-sm pl-6 pr-2 py-1 border border-gray-300 rounded w-24"
+              min="0"
+              step="100"
+            />
+          </div>
+          <button
+            onclick="removeOneTimePayment('${payment.id}')"
+            class="text-red-600 hover:text-red-700"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+    `).join('');
+}
+
+function updateOneTimePaymentDate(id: string, dateStr: string) {
+  const payment = currentPrepaymentStrategy.oneTimePayments.find(p => p.id === id);
+  if (payment) {
+    payment.date = new Date(dateStr);
+    updatePrepaymentImpact();
+  }
+}
+
+function updateOneTimePaymentAmount(id: string, amount: string) {
+  const payment = currentPrepaymentStrategy.oneTimePayments.find(p => p.id === id);
+  if (payment) {
+    payment.amount = parseFloat(amount) || 0;
+    updatePrepaymentImpact();
+  }
+}
+
+function updateOneTimePaymentDescription(id: string, description: string) {
+  const payment = currentPrepaymentStrategy.oneTimePayments.find(p => p.id === id);
+  if (payment) {
+    payment.description = description;
+  }
+}
+
+function removeOneTimePayment(id: string) {
+  currentPrepaymentStrategy.oneTimePayments = currentPrepaymentStrategy.oneTimePayments.filter(p => p.id !== id);
+  renderOneTimePayments();
+  updatePrepaymentImpact();
+}
+
+function loadSmartPlans() {
+  if (!currentResults) return;
+  
+  const container = document.getElementById('smart-plans-container');
+  if (!container) return;
+  
+  const currency = currencySelect?.value || 'USD';
+  const monthlyBudget = currentResults.regularPaymentAmount * 0.2; // Assume 20% extra budget
+  
+  const prepaymentCalculator = new PrepaymentCalculator(
+    currentResults.regularPaymentAmount,
+    currentInput!.interestRate,
+    currentResults.amortizationSchedule
+  );
+  
+  const plans = prepaymentCalculator.generateSmartPlans(monthlyBudget, 'aggressive');
+  
+  container.innerHTML = plans.map(plan => `
+    <div class="p-4 border border-gray-200 rounded-lg hover:border-green-500 transition-colors cursor-pointer" onclick="selectSmartPlan('${plan.id}')">
+      <div class="flex justify-between items-start mb-3">
+        <div>
+          <h4 class="font-semibold text-gray-800">${plan.name} Plan</h4>
+          <p class="text-sm text-gray-600">${plan.description}</p>
+        </div>
+        <div class="text-right">
+          <div class="flex items-center gap-1">
+            ${Array.from({length: 5}, (_, i) => `
+              <svg class="w-4 h-4 ${i < plan.affordabilityScore / 2 ? 'text-yellow-400' : 'text-gray-300'}" fill="currentColor" viewBox="0 0 20 20">
+                <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
+              </svg>
+            `).join('')}
+          </div>
+          <p class="text-xs text-gray-500 mt-1">Affordability</p>
+        </div>
+      </div>
+      
+      <div class="space-y-2 text-sm">
+        <div class="flex justify-between">
+          <span class="text-gray-600">Monthly Extra:</span>
+          <span class="font-medium">${currencyService.formatCurrency(plan.monthlyExtra, currency)}</span>
+        </div>
+        ${plan.oneTimePayments.length > 0 ? `
+          <div class="flex justify-between">
+            <span class="text-gray-600">One-Time Payments:</span>
+            <span class="font-medium">${plan.oneTimePayments.length}</span>
+          </div>
+        ` : ''}
+        <div class="pt-2 border-t">
+          <div class="flex justify-between text-green-700">
+            <span>Interest Saved:</span>
+            <span class="font-semibold">${currencyService.formatCurrency(plan.totalInterestSaved, currency)}</span>
+          </div>
+          <div class="flex justify-between text-green-700">
+            <span>Time Saved:</span>
+            <span class="font-semibold">${plan.timeSaved.years}y ${plan.timeSaved.months}m</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function selectSmartPlan(planId: string) {
+  if (!currentResults) return;
+  
+  const monthlyBudget = currentResults.regularPaymentAmount * 0.2;
+  const prepaymentCalculator = new PrepaymentCalculator(
+    currentResults.regularPaymentAmount,
+    currentInput!.interestRate,
+    currentResults.amortizationSchedule
+  );
+  
+  const plans = prepaymentCalculator.generateSmartPlans(monthlyBudget, 'aggressive');
+  const selectedPlan = plans.find(p => p.id === planId);
+  
+  if (!selectedPlan) return;
+  
+  // Clear existing prepayments
+  currentPrepaymentStrategy.recurringPayments = [];
+  currentPrepaymentStrategy.oneTimePayments = [];
+  
+  // Apply smart plan
+  if (selectedPlan.monthlyExtra > 0) {
+    currentPrepaymentStrategy.recurringPayments = [{
+      amount: selectedPlan.monthlyExtra,
+      frequency: 'monthly',
+      startDate: new Date()
+    }];
+  }
+  
+  selectedPlan.oneTimePayments.forEach((payment, index) => {
+    const date = new Date();
+    date.setMonth(date.getMonth() + payment.month);
+    
+    currentPrepaymentStrategy.oneTimePayments.push({
+      id: `smart-${index}`,
+      date,
+      amount: payment.amount,
+      description: payment.description
+    });
+  });
+  
+  // Switch to appropriate tab
+  if (currentPrepaymentStrategy.recurringPayments.length > 0) {
+    (document.querySelector('[data-tab="recurring"]') as HTMLButtonElement)?.click();
+    recurringAmountInput.value = selectedPlan.monthlyExtra.toString();
+  } else if (currentPrepaymentStrategy.oneTimePayments.length > 0) {
+    (document.querySelector('[data-tab="onetime"]') as HTMLButtonElement)?.click();
+    renderOneTimePayments();
+  }
+  
+  updatePrepaymentImpact();
+}
+
+function updatePrepaymentImpact() {
+  const impactDiv = document.getElementById('prepayment-impact');
+  const impactInterestSaved = document.getElementById('impact-interest-saved');
+  const impactTimeSaved = document.getElementById('impact-time-saved');
+  
+  if (!currentResults || !currentPrepaymentStrategy.enabled) {
+    impactDiv?.classList.add('hidden');
+    return;
+  }
+  
+  const hasPayments = currentPrepaymentStrategy.recurringPayments.length > 0 || 
+                     currentPrepaymentStrategy.oneTimePayments.length > 0;
+  
+  if (!hasPayments) {
+    impactDiv?.classList.add('hidden');
+    return;
+  }
+  
+  // Show impact summary immediately with estimated values
+  if (currentPrepaymentResults && impactDiv) {
+    impactDiv.classList.remove('hidden');
+    
+    const currency = currentResults.currency || 'USD';
+    
+    if (impactInterestSaved) {
+      impactInterestSaved.textContent = currencyService.formatCurrency(currentPrepaymentResults.interestSaved, currency);
+    }
+    
+    if (impactTimeSaved) {
+      const { years, months } = currentPrepaymentResults.timeSaved;
+      impactTimeSaved.textContent = years > 0 ? `${years} years, ${months} months` : `${months} months`;
+    }
+  } else {
+    // Recalculate mortgage with prepayments
+    calculateMortgage();
+  }
+}
+
+function createPrepaymentTimeline(results: PrepaymentResults) {
+  const canvas = document.getElementById('prepayment-timeline-chart') as HTMLCanvasElement;
+  if (!canvas || !results.prepaymentEvents.length) return;
+  
+  // Destroy existing chart
+  if (prepaymentTimelineChart) {
+    prepaymentTimelineChart.destroy();
+  }
+  
+  const currency = currentResults?.currency || 'USD';
+  
+  // Group prepayments by month
+  const monthlyPrepayments = new Map<string, number>();
+  results.prepaymentEvents.forEach(event => {
+    const monthKey = `${event.date.getFullYear()}-${event.date.getMonth() + 1}`;
+    monthlyPrepayments.set(monthKey, (monthlyPrepayments.get(monthKey) || 0) + event.amount);
+  });
+  
+  // Create chart data
+  const labels: string[] = [];
+  const data: number[] = [];
+  
+  monthlyPrepayments.forEach((amount, monthKey) => {
+    const [year, month] = monthKey.split('-');
+    labels.push(`${month}/${year}`);
+    data.push(amount);
+  });
+  
+  prepaymentTimelineChart = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: labels.slice(0, 24), // Show first 2 years
+      datasets: [{
+        label: 'Prepayment Amount',
+        data: data.slice(0, 24),
+        backgroundColor: 'rgba(34, 197, 94, 0.5)',
+        borderColor: 'rgb(34, 197, 94)',
+        borderWidth: 1
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: {
+          display: false
+        },
+        tooltip: {
+          callbacks: {
+            label: function(context) {
+              return `Prepayment: ${currencyService.formatCurrency(context.parsed.y, currency)}`;
+            }
+          }
+        }
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          ticks: {
+            callback: function(value) {
+              return currencyService.formatCurrency(value as number, currency);
+            }
+          }
+        }
+      }
+    }
+  });
+  
+  // Display prepayment events list
+  const eventsList = document.getElementById('prepayment-events-list');
+  if (eventsList) {
+    eventsList.innerHTML = results.prepaymentEvents.slice(0, 10).map(event => `
+      <div class="flex justify-between items-center p-2 bg-gray-50 rounded text-sm">
+        <div>
+          <span class="font-medium">${event.date.toLocaleDateString()}</span>
+          <span class="text-gray-600 ml-2">${event.description}</span>
+        </div>
+        <div class="text-right">
+          <div class="font-semibold text-green-700">${currencyService.formatCurrency(event.amount, currency)}</div>
+          <div class="text-xs text-gray-500">Saves ${currencyService.formatCurrency(event.interestSaved, currency)}</div>
+        </div>
+      </div>
+    `).join('');
+    
+    if (results.prepaymentEvents.length > 10) {
+      eventsList.innerHTML += `
+        <p class="text-center text-sm text-gray-500 mt-2">
+          And ${results.prepaymentEvents.length - 10} more prepayments...
+        </p>
+      `;
+    }
+  }
+}
+
+// Make functions available globally
+(window as any).updateOneTimePaymentDate = updateOneTimePaymentDate;
+(window as any).updateOneTimePaymentAmount = updateOneTimePaymentAmount;
+(window as any).updateOneTimePaymentDescription = updateOneTimePaymentDescription;
+(window as any).removeOneTimePayment = removeOneTimePayment;
+(window as any).selectSmartPlan = selectSmartPlan;
