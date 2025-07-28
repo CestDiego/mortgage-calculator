@@ -36,7 +36,7 @@ export class MortgageCalculator {
     const lastPayment = amortizationSchedule[amortizationSchedule.length - 1];
     const totalAmount = lastPayment.totalPrincipalPaid + lastPayment.totalInterestPaid;
     
-    return {
+    const results: MortgageResults = {
       homePrice: homePrice.toNumber(),
       downPaymentAmount: downPaymentAmount.toNumber(),
       loanAmount: loanAmount.toNumber(),
@@ -45,8 +45,25 @@ export class MortgageCalculator {
       totalAmount: totalAmount,
       totalInterest: lastPayment.totalInterestPaid,
       amortizationSchedule,
-      payoffDate: lastPayment.paymentDate
+      payoffDate: lastPayment.paymentDate,
+      currency: this.input.currency,
+      displayCurrency: this.input.displayCurrency,
+      exchangeRate: this.input.exchangeRate
     };
+    
+    // Calculate converted amounts if display currency is different
+    if (this.input.displayCurrency && this.input.displayCurrency !== this.input.currency && this.input.exchangeRate) {
+      results.convertedAmounts = {
+        homePrice: homePrice.toNumber() * this.input.exchangeRate,
+        downPaymentAmount: downPaymentAmount.toNumber() * this.input.exchangeRate,
+        loanAmount: loanAmount.toNumber() * this.input.exchangeRate,
+        regularPaymentAmount: regularPaymentAmount.toNumber() * this.input.exchangeRate,
+        totalAmount: totalAmount * this.input.exchangeRate,
+        totalInterest: lastPayment.totalInterestPaid * this.input.exchangeRate
+      };
+    }
+    
+    return results;
   }
 
   private getPaymentsPerYear(): number {

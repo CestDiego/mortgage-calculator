@@ -7,6 +7,9 @@ export interface MortgageInput {
   loanTermYears: number;
   paymentFrequency: 'monthly' | 'biweekly' | 'weekly';
   extraPayment?: number;
+  currency: string;
+  displayCurrency?: string;
+  exchangeRate?: number;
 }
 
 export interface PaymentDetails {
@@ -31,4 +34,15 @@ export interface MortgageResults {
   totalInterest: number;
   amortizationSchedule: PaymentDetails[];
   payoffDate: Date;
+  currency: string;
+  displayCurrency?: string;
+  exchangeRate?: number;
+  convertedAmounts?: {
+    homePrice: number;
+    downPaymentAmount: number;
+    loanAmount: number;
+    regularPaymentAmount: number;
+    totalAmount: number;
+    totalInterest: number;
+  };
 }

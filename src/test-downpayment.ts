@@ -12,7 +12,8 @@ const test1Input: MortgageInput = {
   loanAmount: 0, // Will be calculated
   interestRate: 6.5,
   loanTermYears: 30,
-  paymentFrequency: 'monthly'
+  paymentFrequency: 'monthly',
+  currency: 'USD'
 };
 
 console.log('Test 1: 20% Down Payment on $500,000 Home');
@@ -37,7 +38,8 @@ const test2Input: MortgageInput = {
   loanAmount: 0,
   interestRate: 6.5,
   loanTermYears: 30,
-  paymentFrequency: 'monthly'
+  paymentFrequency: 'monthly',
+  currency: 'USD'
 };
 
 console.log('Test 2: $75,000 Fixed Down Payment on $500,000 Home');
@@ -63,7 +65,8 @@ const test3Input: MortgageInput = {
   loanAmount: 0,
   interestRate: 7.0,
   loanTermYears: 30,
-  paymentFrequency: 'monthly'
+  paymentFrequency: 'monthly',
+  currency: 'USD'
 };
 
 console.log('Test 3: 5% Down Payment on $300,000 Home');

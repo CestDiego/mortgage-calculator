@@ -9,7 +9,8 @@ const basicInput: MortgageInput = {
   loanAmount: 300000,
   interestRate: 6.5,
   loanTermYears: 30,
-  paymentFrequency: 'monthly'
+  paymentFrequency: 'monthly',
+  currency: 'USD'
 };
 
 console.log('Test 1: Basic Monthly Mortgage');
@@ -30,7 +31,8 @@ const extraPaymentInput: MortgageInput = {
   interestRate: 6.5,
   loanTermYears: 30,
   paymentFrequency: 'monthly',
-  extraPayment: 200
+  extraPayment: 200,
+  currency: 'USD'
 };
 
 console.log('Test 2: Monthly Mortgage with Extra Payments');
@@ -52,7 +54,8 @@ const biweeklyInput: MortgageInput = {
   loanAmount: 300000,
   interestRate: 6.5,
   loanTermYears: 30,
-  paymentFrequency: 'biweekly'
+  paymentFrequency: 'biweekly',
+  currency: 'USD'
 };
 
 console.log('Test 3: Biweekly Mortgage');

@@ -26,7 +26,8 @@ function testBasicMonthlyPayment() {
     loanAmount: 300000,
     interestRate: 4.5,
     loanTermYears: 30,
-    paymentFrequency: 'monthly'
+    paymentFrequency: 'monthly',
+    currency: 'USD'
   };
   
   const calculator = new MortgageCalculator(input);
@@ -52,7 +53,8 @@ function testBiweeklyPayment() {
     loanAmount: 300000,
     interestRate: 4.5,
     loanTermYears: 30,
-    paymentFrequency: 'biweekly'
+    paymentFrequency: 'biweekly',
+    currency: 'USD'
   };
   
   const calculator = new MortgageCalculator(input);
@@ -79,7 +81,8 @@ function testWeeklyPayment() {
     loanAmount: 300000,
     interestRate: 4.5,
     loanTermYears: 30,
-    paymentFrequency: 'weekly'
+    paymentFrequency: 'weekly',
+    currency: 'USD'
   };
   
   const calculator = new MortgageCalculator(input);
@@ -106,7 +109,8 @@ function testExtraPayments() {
     loanAmount: 300000,
     interestRate: 4.5,
     loanTermYears: 30,
-    paymentFrequency: 'monthly'
+    paymentFrequency: 'monthly',
+    currency: 'USD'
   };
   
   const inputWithExtra: MortgageInput = {
@@ -141,7 +145,8 @@ function testZeroInterestRate() {
     loanAmount: 300000,
     interestRate: 0,
     loanTermYears: 30,
-    paymentFrequency: 'monthly'
+    paymentFrequency: 'monthly',
+    currency: 'USD'
   };
   
   const calculator = new MortgageCalculator(input);
@@ -170,7 +175,8 @@ function testShortLoanTerm() {
     loanAmount: 50000,
     interestRate: 4.5,
     loanTermYears: 1,
-    paymentFrequency: 'monthly'
+    paymentFrequency: 'monthly',
+    currency: 'USD'
   };
   
   const calculator = new MortgageCalculator(input);
@@ -197,7 +203,8 @@ function testLongLoanTerm() {
     loanAmount: 500000,
     interestRate: 4.5,
     loanTermYears: 40,
-    paymentFrequency: 'monthly'
+    paymentFrequency: 'monthly',
+    currency: 'USD'
   };
   
   const calculator = new MortgageCalculator(input);
@@ -224,7 +231,8 @@ function testTotalInterestCalculation() {
     loanAmount: 200000,
     interestRate: 5,
     loanTermYears: 15,
-    paymentFrequency: 'monthly'
+    paymentFrequency: 'monthly',
+    currency: 'USD'
   };
   
   const calculator = new MortgageCalculator(input);
@@ -260,7 +268,8 @@ function testPayoffDateCalculation() {
     loanAmount: 150000,
     interestRate: 3.5,
     loanTermYears: 20,
-    paymentFrequency: 'monthly'
+    paymentFrequency: 'monthly',
+    currency: 'USD'
   };
   
   const calculator = new MortgageCalculator(input);
@@ -296,7 +305,8 @@ function testAmortizationScheduleAccuracy() {
     loanAmount: 100000,
     interestRate: 6,
     loanTermYears: 5,
-    paymentFrequency: 'monthly'
+    paymentFrequency: 'monthly',
+    currency: 'USD'
   };
   
   const calculator = new MortgageCalculator(input);

@@ -4,6 +4,8 @@ import type { MortgageInput, MortgageResults, PaymentDetails } from './types';
 import { Chart, registerables } from 'chart.js';
 import { ComparisonManager, ReverseCalculator } from './comparison';
 import type { ComparisonScenario, ReverseCalculatorInput } from './comparison';
+import { CurrencyService, CURRENCIES } from './currency-service';
+import type { ExchangeRates } from './currency-service';
 Chart.register(...registerables);
 
 // Global variables
@@ -14,6 +16,8 @@ let balanceChart: Chart<"line", {x: string, y: number}[], unknown> | null = null
 let comparisonChart: Chart<"bar", number[], string> | null = null;
 const comparisonManager = new ComparisonManager();
 const reverseCalculator = new ReverseCalculator();
+const currencyService = CurrencyService.getInstance();
+let currentExchangeRates: ExchangeRates | null = null;
 
 // Initialize the app
 document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
@@ -33,6 +37,97 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
               <h2 class="text-lg font-semibold text-gray-800">Property Details</h2>
             </div>
             
+            <!-- Currency Selector -->
+            <div>
+              <label for="currency" class="block text-sm font-medium text-gray-700 mb-1">
+                Currency
+                <span class="inline-block ml-1 text-gray-400 cursor-help" title="Select the currency for your mortgage">
+                  <svg class="w-4 h-4 inline" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/>
+                  </svg>
+                </span>
+              </label>
+              <select
+                id="currency"
+                name="currency"
+                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                ${Object.entries(CURRENCIES).map(([code, info]) => 
+                  `<option value="${code}" ${code === 'USD' ? 'selected' : ''}>${info.symbol} ${code} - ${info.name}</option>`
+                ).join('')}
+              </select>
+            </div>
+            
+            <!-- Currency Conversion Toggle -->
+            <div>
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  id="showCurrencyConversion"
+                  name="showCurrencyConversion"
+                  class="text-blue-600 focus:ring-blue-500 rounded"
+                />
+                <span class="text-sm font-medium text-gray-700">Show currency conversion</span>
+              </label>
+            </div>
+            
+            <!-- Currency Conversion Options (Hidden by default) -->
+            <div id="currencyConversionSection" class="hidden space-y-4 p-4 bg-gray-50 rounded-lg">
+              <div>
+                <label for="displayCurrency" class="block text-sm font-medium text-gray-700 mb-1">
+                  Display Currency
+                </label>
+                <select
+                  id="displayCurrency"
+                  name="displayCurrency"
+                  class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  ${Object.entries(CURRENCIES).map(([code, info]) => 
+                    `<option value="${code}" ${code === 'EUR' ? 'selected' : ''}>${info.symbol} ${code} - ${info.name}</option>`
+                  ).join('')}
+                </select>
+              </div>
+              
+              <div>
+                <label for="exchangeRate" class="block text-sm font-medium text-gray-700 mb-1">
+                  Exchange Rate
+                  <span class="text-xs text-gray-500 ml-1" id="exchangeRateLabel">(1 USD = ? EUR)</span>
+                </label>
+                <div class="flex gap-2">
+                  <div class="relative flex-1">
+                    <input
+                      type="number"
+                      id="exchangeRate"
+                      name="exchangeRate"
+                      value="0.92"
+                      min="0.0001"
+                      step="0.0001"
+                      class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <span id="userOverrideIndicator" class="hidden absolute right-2 top-1/2 transform -translate-y-1/2 text-amber-600" title="User-defined rate">
+                      <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
+                      </svg>
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    id="fetchLatestRate"
+                    class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition duration-200 text-sm font-medium whitespace-nowrap"
+                  >
+                    <span id="fetchRateText">Fetch Latest</span>
+                    <span id="fetchRateLoading" class="hidden">
+                      <svg class="animate-spin h-4 w-4 inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                    </span>
+                  </button>
+                </div>
+                <p class="mt-1 text-xs text-gray-500" id="rateLastUpdated"></p>
+              </div>
+            </div>
+            
             <div>
               <label for="homePrice" class="block text-sm font-medium text-gray-700 mb-1">
                 Home Price
@@ -43,7 +138,7 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
                 </span>
               </label>
               <div class="relative">
-                <span class="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">$</span>
+                <span class="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" id="homePriceSymbol">$</span>
                 <input
                   type="number"
                   id="homePrice"
@@ -208,7 +303,7 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
                   </span>
                 </label>
                 <div class="relative">
-                  <span class="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">$</span>
+                  <span class="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" id="extraPaymentSymbol">$</span>
                   <input
                     type="number"
                     id="extraPayment"
@@ -407,7 +502,7 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
                   Target Monthly Payment
                 </label>
                 <div class="relative">
-                  <span class="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">$</span>
+                  <span class="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" id="targetPaymentSymbol">$</span>
                   <input
                     type="number"
                     id="targetPayment"
@@ -501,9 +596,9 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
 
 // Form submission handler
 const form = document.getElementById('mortgage-form') as HTMLFormElement;
-form.addEventListener('submit', (e) => {
+form.addEventListener('submit', async (e) => {
   e.preventDefault();
-  calculateMortgage();
+  await calculateMortgage();
 });
 
 // Export CSV handler
@@ -532,6 +627,10 @@ downPaymentTypeRadios.forEach(radio => {
   radio.addEventListener('change', (e) => {
     const target = e.target as HTMLInputElement;
     if (downPaymentLabel && downPaymentValueInput && downPaymentPrefix) {
+      const currency = currencySelect?.value || 'USD';
+      const currencyInfo = CURRENCIES[currency];
+      const symbol = currencyInfo?.symbol || '$';
+      
       if (target.value === 'percentage') {
         downPaymentLabel.textContent = 'Down Payment (%)';
         downPaymentPrefix.textContent = '%';
@@ -539,8 +638,8 @@ downPaymentTypeRadios.forEach(radio => {
         downPaymentValueInput.step = '0.1';
         downPaymentValueInput.max = '100';
       } else {
-        downPaymentLabel.textContent = 'Down Payment ($)';
-        downPaymentPrefix.textContent = '$';
+        downPaymentLabel.textContent = `Down Payment (${symbol})`;
+        downPaymentPrefix.textContent = symbol;
         downPaymentValueInput.value = '80000';
         downPaymentValueInput.step = '1000';
         downPaymentValueInput.removeAttribute('max');
@@ -603,6 +702,135 @@ const loanAmountInput = document.getElementById('loanAmount') as HTMLInputElemen
 homePriceInput?.addEventListener('input', calculateLoanAmount);
 downPaymentValueInput?.addEventListener('input', calculateLoanAmount);
 
+// Currency handlers
+const currencySelect = document.getElementById('currency') as HTMLSelectElement;
+const displayCurrencySelect = document.getElementById('displayCurrency') as HTMLSelectElement;
+const showCurrencyConversionToggle = document.getElementById('showCurrencyConversion') as HTMLInputElement;
+const currencyConversionSection = document.getElementById('currencyConversionSection');
+const exchangeRateInput = document.getElementById('exchangeRate') as HTMLInputElement;
+const fetchLatestRateBtn = document.getElementById('fetchLatestRate');
+const userOverrideIndicator = document.getElementById('userOverrideIndicator');
+
+// Update currency symbols when currency changes
+currencySelect?.addEventListener('change', () => {
+  updateCurrencySymbols();
+  updateExchangeRateLabel();
+  if (showCurrencyConversionToggle?.checked) {
+    fetchExchangeRate();
+  }
+});
+
+displayCurrencySelect?.addEventListener('change', () => {
+  updateExchangeRateLabel();
+  if (showCurrencyConversionToggle?.checked) {
+    fetchExchangeRate();
+  }
+});
+
+// Toggle currency conversion section
+showCurrencyConversionToggle?.addEventListener('change', (e) => {
+  const target = e.target as HTMLInputElement;
+  if (target.checked) {
+    currencyConversionSection?.classList.remove('hidden');
+    fetchExchangeRate();
+  } else {
+    currencyConversionSection?.classList.add('hidden');
+  }
+});
+
+// Exchange rate input change
+exchangeRateInput?.addEventListener('input', () => {
+  userOverrideIndicator?.classList.remove('hidden');
+  const baseCurrency = currencySelect?.value || 'USD';
+  const displayCurrency = displayCurrencySelect?.value || 'EUR';
+  const rate = parseFloat(exchangeRateInput.value);
+  if (!isNaN(rate) && rate > 0) {
+    currencyService.saveUserRate(baseCurrency, displayCurrency, rate);
+  }
+});
+
+// Fetch latest rate button
+fetchLatestRateBtn?.addEventListener('click', () => {
+  fetchExchangeRate();
+});
+
+function updateCurrencySymbols() {
+  const currency = currencySelect?.value || 'USD';
+  const currencyInfo = CURRENCIES[currency];
+  const symbol = currencyInfo?.symbol || '$';
+  
+  // Update all currency symbols
+  const homePriceSymbol = document.getElementById('homePriceSymbol');
+  const extraPaymentSymbol = document.getElementById('extraPaymentSymbol');
+  const downPaymentPrefix = document.getElementById('downPaymentPrefix');
+  const targetPaymentSymbol = document.getElementById('targetPaymentSymbol');
+  
+  if (homePriceSymbol) homePriceSymbol.textContent = symbol;
+  if (extraPaymentSymbol) extraPaymentSymbol.textContent = symbol;
+  if (targetPaymentSymbol) targetPaymentSymbol.textContent = symbol;
+  
+  // Update down payment prefix if in fixed mode
+  const downPaymentType = (document.querySelector('input[name="downPaymentType"]:checked') as HTMLInputElement)?.value;
+  if (downPaymentPrefix && downPaymentType === 'fixed') {
+    downPaymentPrefix.textContent = symbol;
+  }
+}
+
+function updateExchangeRateLabel() {
+  const baseCurrency = currencySelect?.value || 'USD';
+  const displayCurrency = displayCurrencySelect?.value || 'EUR';
+  const label = document.getElementById('exchangeRateLabel');
+  if (label) {
+    label.textContent = `(1 ${baseCurrency} = ? ${displayCurrency})`;
+  }
+}
+
+async function fetchExchangeRate() {
+  const baseCurrency = currencySelect?.value || 'USD';
+  const displayCurrency = displayCurrencySelect?.value || 'EUR';
+  
+  if (baseCurrency === displayCurrency) {
+    exchangeRateInput.value = '1';
+    userOverrideIndicator?.classList.add('hidden');
+    return;
+  }
+  
+  const fetchRateText = document.getElementById('fetchRateText');
+  const fetchRateLoading = document.getElementById('fetchRateLoading');
+  
+  if (fetchRateText) fetchRateText.classList.add('hidden');
+  if (fetchRateLoading) fetchRateLoading.classList.remove('hidden');
+  // isLoadingRates = true;
+  
+  try {
+    const rates = await currencyService.getExchangeRates(baseCurrency);
+    currentExchangeRates = rates;
+    
+    const rate = rates.rates[displayCurrency] || 1;
+    exchangeRateInput.value = rate.toFixed(4);
+    
+    // Update last updated text
+    const lastUpdated = document.getElementById('rateLastUpdated');
+    if (lastUpdated) {
+      const date = new Date(rates.timestamp);
+      lastUpdated.textContent = `Last updated: ${date.toLocaleString()}`;
+    }
+    
+    // Show/hide user override indicator
+    if (rates.isUserOverride) {
+      userOverrideIndicator?.classList.remove('hidden');
+    } else {
+      userOverrideIndicator?.classList.add('hidden');
+    }
+  } catch (error) {
+    console.error('Error fetching exchange rate:', error);
+  } finally {
+    if (fetchRateText) fetchRateText.classList.remove('hidden');
+    if (fetchRateLoading) fetchRateLoading.classList.add('hidden');
+    // isLoadingRates = false;
+  }
+}
+
 function calculateLoanAmount() {
   const homePrice = parseFloat(homePriceInput?.value || '0');
   const downPaymentValue = parseFloat(downPaymentValueInput?.value || '0');
@@ -623,18 +851,28 @@ function calculateLoanAmount() {
   // Update the loan amount display
   const loanAmountDisplay = document.getElementById('loanAmountDisplay');
   if (loanAmountDisplay) {
-    const formatter = new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
-    });
-    loanAmountDisplay.textContent = formatter.format(loanAmount);
+    const currency = currencySelect?.value || 'USD';
+    loanAmountDisplay.textContent = currencyService.formatCurrency(loanAmount, currency);
   }
 }
 
-function calculateMortgage() {
+async function calculateMortgage() {
   const formData = new FormData(form);
+  
+  const currency = formData.get('currency') as string || 'USD';
+  let displayCurrency: string | undefined;
+  let exchangeRate: number | undefined;
+  
+  // Handle currency conversion if enabled
+  if (showCurrencyConversionToggle?.checked) {
+    displayCurrency = formData.get('displayCurrency') as string || 'EUR';
+    exchangeRate = Number(formData.get('exchangeRate')) || 1;
+    
+    // Ensure we have exchange rates loaded
+    if (!currentExchangeRates || currentExchangeRates.base !== currency) {
+      await fetchExchangeRate();
+    }
+  }
   
   const input: MortgageInput = {
     homePrice: Number(formData.get('homePrice')),
@@ -644,12 +882,27 @@ function calculateMortgage() {
     interestRate: Number(formData.get('interestRate')),
     loanTermYears: Number(formData.get('loanTermYears')),
     paymentFrequency: formData.get('paymentFrequency') as 'monthly' | 'biweekly' | 'weekly',
-    extraPayment: Number(formData.get('extraPayment')) || 0
+    extraPayment: Number(formData.get('extraPayment')) || 0,
+    currency: currency,
+    displayCurrency: displayCurrency,
+    exchangeRate: exchangeRate
   };
   
   currentInput = input;
   const calculator = new MortgageCalculator(input);
   currentResults = calculator.calculate();
+  
+  // Add converted amounts if currency conversion is enabled
+  if (displayCurrency && exchangeRate && displayCurrency !== currency) {
+    currentResults.convertedAmounts = {
+      homePrice: currencyService.convertAmount(currentResults.homePrice, currency, displayCurrency, currentExchangeRates || { base: currency, date: '', rates: { [displayCurrency]: exchangeRate }, timestamp: Date.now() }),
+      downPaymentAmount: currencyService.convertAmount(currentResults.downPaymentAmount, currency, displayCurrency, currentExchangeRates || { base: currency, date: '', rates: { [displayCurrency]: exchangeRate }, timestamp: Date.now() }),
+      loanAmount: currencyService.convertAmount(currentResults.loanAmount, currency, displayCurrency, currentExchangeRates || { base: currency, date: '', rates: { [displayCurrency]: exchangeRate }, timestamp: Date.now() }),
+      regularPaymentAmount: currencyService.convertAmount(currentResults.regularPaymentAmount, currency, displayCurrency, currentExchangeRates || { base: currency, date: '', rates: { [displayCurrency]: exchangeRate }, timestamp: Date.now() }),
+      totalAmount: currencyService.convertAmount(currentResults.totalAmount, currency, displayCurrency, currentExchangeRates || { base: currency, date: '', rates: { [displayCurrency]: exchangeRate }, timestamp: Date.now() }),
+      totalInterest: currencyService.convertAmount(currentResults.totalInterest, currency, displayCurrency, currentExchangeRates || { base: currency, date: '', rates: { [displayCurrency]: exchangeRate }, timestamp: Date.now() })
+    };
+  }
   
   displayResults(currentResults);
   createCharts(currentResults);
@@ -664,19 +917,9 @@ function displayResults(results: MortgageResults) {
   const summaryDiv = document.getElementById('results-summary');
   if (!summaryDiv) return;
   
-  const formatter = new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
-  });
-  
-  const shortFormatter = new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0
-  });
+  const baseCurrency = results.currency || 'USD';
+  const displayCurrency = results.displayCurrency;
+  const showConversion = displayCurrency && displayCurrency !== baseCurrency && results.convertedAmounts;
   
   const paymentFrequencyText = currentInput?.paymentFrequency === 'monthly' ? 'Monthly' : 
                                currentInput?.paymentFrequency === 'biweekly' ? 'Bi-weekly' : 'Weekly';
@@ -688,9 +931,12 @@ function displayResults(results: MortgageResults) {
       <!-- Big Payment Display -->
       <div class="text-center p-6 bg-blue-50 rounded-lg">
         <p class="text-sm text-gray-600 mb-2">${paymentFrequencyText} Payment</p>
-        <p class="text-4xl font-bold text-blue-700">${formatter.format(results.regularPaymentAmount)}</p>
+        <p class="text-4xl font-bold text-blue-700">${currencyService.formatCurrency(results.regularPaymentAmount, baseCurrency)}</p>
+        ${showConversion ? `
+          <p class="text-lg text-blue-600 mt-1">${currencyService.formatCurrency(results.convertedAmounts!.regularPaymentAmount, displayCurrency!)}</p>
+        ` : ''}
         ${currentInput?.extraPayment && currentInput.extraPayment > 0 ? `
-          <p class="text-sm text-gray-600 mt-2">+ ${formatter.format(currentInput.extraPayment)} extra</p>
+          <p class="text-sm text-gray-600 mt-2">+ ${currencyService.formatCurrency(currentInput.extraPayment, baseCurrency)} extra</p>
         ` : ''}
       </div>
       
@@ -698,7 +944,10 @@ function displayResults(results: MortgageResults) {
       <div class="space-y-3">
         <div class="flex justify-between items-center">
           <span class="text-gray-600">Loan Amount</span>
-          <span class="font-semibold text-gray-800">${shortFormatter.format(results.loanAmount)}</span>
+          <div class="text-right">
+            <span class="font-semibold text-gray-800">${currencyService.formatCurrency(results.loanAmount, baseCurrency)}</span>
+            ${showConversion ? `<br><span class="text-sm text-gray-600">${currencyService.formatCurrency(results.convertedAmounts!.loanAmount, displayCurrency!)}</span>` : ''}
+          </div>
         </div>
         
         <div class="flex justify-between items-center">
@@ -728,12 +977,18 @@ function displayResults(results: MortgageResults) {
         <div id="cost-summary-content" class="hidden mt-3 space-y-2">
           <div class="flex justify-between items-center text-sm">
             <span class="text-gray-600">Total of ${results.totalPayments} payments</span>
-            <span class="font-medium text-gray-800">${shortFormatter.format(results.totalAmount)}</span>
+            <div class="text-right">
+              <span class="font-medium text-gray-800">${currencyService.formatCurrency(results.totalAmount, baseCurrency)}</span>
+              ${showConversion ? `<br><span class="text-xs text-gray-600">${currencyService.formatCurrency(results.convertedAmounts!.totalAmount, displayCurrency!)}</span>` : ''}
+            </div>
           </div>
           
           <div class="flex justify-between items-center text-sm">
             <span class="text-gray-600">Total Interest Paid</span>
-            <span class="font-medium text-gray-800">${shortFormatter.format(results.totalInterest)}</span>
+            <div class="text-right">
+              <span class="font-medium text-gray-800">${currencyService.formatCurrency(results.totalInterest, baseCurrency)}</span>
+              ${showConversion ? `<br><span class="text-xs text-gray-600">${currencyService.formatCurrency(results.convertedAmounts!.totalInterest, displayCurrency!)}</span>` : ''}
+            </div>
           </div>
           
           <div class="flex justify-between items-center text-sm">
@@ -752,7 +1007,7 @@ function displayResults(results: MortgageResults) {
             </svg>
             <div>
               <p class="text-sm font-medium text-green-800">Great choice on extra payments!</p>
-              <p class="text-sm text-green-700">You'll save ${shortFormatter.format(interestSavings)} in interest and pay off your loan ${getTimeSaved(results)} early.</p>
+              <p class="text-sm text-green-700">You'll save ${currencyService.formatCurrency(interestSavings, baseCurrency)} in interest and pay off your loan ${getTimeSaved(results)} early.</p>
             </div>
           </div>
         </div>
@@ -895,12 +1150,7 @@ function displayAmortizationSchedule(schedule: PaymentDetails[]) {
   const tbody = document.getElementById('amortization-tbody');
   if (!tbody) return;
   
-  const formatter = new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
-  });
+  const baseCurrency = currentResults?.currency || 'USD';
   
   // Display first 12 and last 3 payments for better performance
   const displaySchedule = [
@@ -925,11 +1175,11 @@ function displayAmortizationSchedule(schedule: PaymentDetails[]) {
       <tr class="hover:bg-gray-50">
         <td class="px-4 py-2 text-sm text-gray-900">${payment.paymentNumber}</td>
         <td class="px-4 py-2 text-sm text-gray-900">${payment.paymentDate.toLocaleDateString()}</td>
-        <td class="px-4 py-2 text-sm text-gray-900">${formatter.format(payment.paymentAmount)}</td>
-        <td class="px-4 py-2 text-sm text-gray-900">${formatter.format(payment.principalPayment)}</td>
-        <td class="px-4 py-2 text-sm text-gray-900">${formatter.format(payment.interestPayment)}</td>
-        <td class="px-4 py-2 text-sm text-gray-900">${formatter.format(payment.extraPayment)}</td>
-        <td class="px-4 py-2 text-sm text-gray-900">${formatter.format(payment.remainingBalance)}</td>
+        <td class="px-4 py-2 text-sm text-gray-900">${currencyService.formatCurrency(payment.paymentAmount, baseCurrency)}</td>
+        <td class="px-4 py-2 text-sm text-gray-900">${currencyService.formatCurrency(payment.principalPayment, baseCurrency)}</td>
+        <td class="px-4 py-2 text-sm text-gray-900">${currencyService.formatCurrency(payment.interestPayment, baseCurrency)}</td>
+        <td class="px-4 py-2 text-sm text-gray-900">${currencyService.formatCurrency(payment.extraPayment, baseCurrency)}</td>
+        <td class="px-4 py-2 text-sm text-gray-900">${currencyService.formatCurrency(payment.remainingBalance, baseCurrency)}</td>
       </tr>
     `;
   }).join('');
@@ -990,6 +1240,7 @@ function exportToCSV() {
 }
 
 // Calculate on load
+updateCurrencySymbols();
 calculateLoanAmount();
 calculateMortgage();
 
@@ -1034,12 +1285,7 @@ function updateComparisonDisplay() {
     return;
   }
   
-  const formatter = new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
-  });
+  const baseCurrency = scenarios[0]?.results?.currency || 'USD';
   
   // Build comparison table
   comparisonTable.innerHTML = `
@@ -1059,11 +1305,11 @@ function updateComparisonDisplay() {
         ${scenarios.map(scenario => `
           <tr>
             <td class="px-4 py-3 text-sm font-medium text-gray-900">${scenario.name}</td>
-            <td class="px-4 py-3 text-sm text-gray-900">${formatter.format(scenario.results!.homePrice)}</td>
-            <td class="px-4 py-3 text-sm text-gray-900">${formatter.format(scenario.results!.downPaymentAmount)}</td>
-            <td class="px-4 py-3 text-sm text-gray-900">${formatter.format(scenario.results!.loanAmount)}</td>
-            <td class="px-4 py-3 text-sm text-gray-900">${formatter.format(scenario.results!.regularPaymentAmount)}</td>
-            <td class="px-4 py-3 text-sm text-gray-900">${formatter.format(scenario.results!.totalInterest)}</td>
+            <td class="px-4 py-3 text-sm text-gray-900">${currencyService.formatCurrency(scenario.results!.homePrice, baseCurrency)}</td>
+            <td class="px-4 py-3 text-sm text-gray-900">${currencyService.formatCurrency(scenario.results!.downPaymentAmount, baseCurrency)}</td>
+            <td class="px-4 py-3 text-sm text-gray-900">${currencyService.formatCurrency(scenario.results!.loanAmount, baseCurrency)}</td>
+            <td class="px-4 py-3 text-sm text-gray-900">${currencyService.formatCurrency(scenario.results!.regularPaymentAmount, baseCurrency)}</td>
+            <td class="px-4 py-3 text-sm text-gray-900">${currencyService.formatCurrency(scenario.results!.totalInterest, baseCurrency)}</td>
             <td class="px-4 py-3 text-sm">
               <button
                 onclick="removeComparison('${scenario.id}')"
@@ -1203,21 +1449,16 @@ function displayReverseResults(result: any, input: ReverseCalculatorInput) {
   
   if (!resultsDiv || !contentDiv) return;
   
-  const formatter = new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
-  });
+  const currency = currencySelect?.value || 'USD';
   
   contentDiv.innerHTML = `
     <div class="text-sm text-purple-800">
-      <p>With a monthly payment of <span class="font-bold">${formatter.format(input.targetPayment)}</span>:</p>
+      <p>With a monthly payment of <span class="font-bold">${currencyService.formatCurrency(input.targetPayment, currency)}</span>:</p>
       <ul class="mt-2 space-y-1">
-        <li>• Maximum loan amount: <span class="font-bold">${formatter.format(result.maxLoanAmount)}</span></li>
+        <li>• Maximum loan amount: <span class="font-bold">${currencyService.formatCurrency(result.maxLoanAmount, currency)}</span></li>
         ${result.maxHomePrice ? `
-          <li>• Maximum home price: <span class="font-bold">${formatter.format(result.maxHomePrice)}</span></li>
-          <li>• Required down payment: <span class="font-bold">${formatter.format(result.requiredDownPayment || 0)}</span></li>
+          <li>• Maximum home price: <span class="font-bold">${currencyService.formatCurrency(result.maxHomePrice, currency)}</span></li>
+          <li>• Required down payment: <span class="font-bold">${currencyService.formatCurrency(result.requiredDownPayment || 0, currency)}</span></li>
         ` : ''}
       </ul>
     </div>
